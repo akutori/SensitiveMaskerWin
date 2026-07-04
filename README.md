@@ -2,5 +2,73 @@
 
 SIP/FreeSWITCHログに限らず、電話番号・パスワード・IPアドレス等の機微情報を含む任意のテキストを、
 外部LLMに貼り付ける前にローカルで自動マスキングするWindowsデスクトップツールです。
+GUI(tkinter)とCLIの両方を提供し、コアのマスキングロジックは両者から共有されます。
 
-詳細は [CLAUDE.md](CLAUDE.md) を参照してください。
+アーキテクチャや開発方針の詳細は [CLAUDE.md](CLAUDE.md) を参照してください。
+
+## セットアップ
+
+```powershell
+uv sync --extra dev
+```
+
+## テスト実行
+
+```powershell
+uv run pytest
+uv run pytest tests/test_masker.py -v   # 個別テスト実行
+```
+
+GUI(`src/gui/app.py`)は自動テストを持ちません。実装計画中の手動確認チェックリストに沿って
+`uv run python -m gui.app` で起動し、都度手動で確認してください。
+
+## CLIの使い方
+
+```powershell
+# ファイル指定
+uv run python -m cli.main --profile rules/sip.json --input in.log --output out.log
+
+# stdin/stdout
+Get-Content in.log | uv run python -m cli.main --profile rules/general.json > out.log
+
+# 複数ファイルのバッチ処理(デフォルトはMappingStoreを全ファイルで共有)
+uv run python -m cli.main --profile rules/sip.json --batch a.log b.log --output-dir masked/
+
+# ファイルごとにMappingStoreをリセットしたい場合
+uv run python -m cli.main --profile rules/sip.json --batch a.log b.log --output-dir masked/ --reset-mapping-per-file
+```
+
+## GUIの起動
+
+```powershell
+uv run python -m gui.app
+```
+
+## PyInstallerによる単独exe化
+
+GUI・CLIそれぞれ独立した`--onefile`実行ファイルとしてビルドできます。
+アイコン(`assets/icon.ico`)はPillow(devのみ)でビルド時に生成済みで、両方のビルドに埋め込まれます。
+
+```powershell
+uv sync --extra dev
+uv run python scripts/generate_icon.py   # アイコンを再生成したい場合のみ
+uv run pyinstaller packaging/SensitiveMaskerCLI.spec --distpath dist --workpath build --noconfirm
+uv run pyinstaller packaging/SensitiveMasker.spec --distpath dist --workpath build --noconfirm
+```
+
+生成物: `dist/SensitiveMaskerCLI.exe`(コンソールあり)、`dist/SensitiveMasker.exe`(ウィンドウのみ)。
+どちらもPythonやuvのインストールなしに単独で動作します。
+
+## ディレクトリ構成
+
+```
+src/
+  masking_core/   # 副作用のないマスキングロジック(Functional Core)
+  cli/            # argparse CLI(Imperative Shell)
+  gui/            # tkinter GUI(Imperative Shell)
+tests/            # pytest(masking_core/cliの自動テスト)
+rules/            # 同梱のルールプロファイル例(general.json / sip.json)
+packaging/        # PyInstaller用エントリスクリプトと.specファイル
+scripts/          # 開発用スクリプト(アイコン生成など)
+assets/           # アプリアイコン等
+```

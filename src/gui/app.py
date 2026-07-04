@@ -420,6 +420,7 @@ class SensitiveMaskerApp(tk.Tk):
         ttk.Button(
             manage_row, text="テンプレートから作成...", command=self._on_new_profile_from_template
         ).pack(side="left", padx=2)
+        ttk.Button(manage_row, text="保存", command=self._on_save_profile).pack(side="left", padx=2)
         ttk.Button(manage_row, text="エクスポート...", command=self._on_export_profile).pack(side="left", padx=2)
         ttk.Button(manage_row, text="ルールを編集...", command=self._on_edit_rules).pack(side="left", padx=2)
 
@@ -477,7 +478,7 @@ class SensitiveMaskerApp(tk.Tk):
             return
         self._update_status_bar()
 
-    # --- 新規作成/テンプレート作成/エクスポート/ルール編集 ------------------
+    # --- 新規作成/テンプレート作成/保存/エクスポート/ルール編集 --------------
 
     def _on_new_profile(self) -> None:
         name = simpledialog.askstring("新規プロファイル", "プロファイル名を入力してください:", parent=self)
@@ -486,6 +487,7 @@ class SensitiveMaskerApp(tk.Tk):
         self.profile = RuleProfile(profile_name=name, rules=[])
         self.profile_path_var.set("")
         self._update_status_bar()
+        self._save_profile_as()
         self._on_edit_rules()
 
     def _on_new_profile_from_template(self) -> None:
@@ -514,9 +516,45 @@ class SensitiveMaskerApp(tk.Tk):
         )
         self.profile_path_var.set("")
         self._update_status_bar()
+        self._save_profile_as()
         self._on_edit_rules()
 
+    def _on_save_profile(self) -> None:
+        """現在のプロファイルを保存する。パスが未確定なら保存先を尋ねる(初回保存)。"""
+        if self.profile is None:
+            messagebox.showerror("SensitiveMasker", "保存するプロファイルがありません。")
+            return
+        path = self.profile_path_var.get()
+        if not path:
+            self._save_profile_as()
+            return
+        self._write_profile(path)
+
+    def _save_profile_as(self) -> bool:
+        """保存先を尋ねて保存する。キャンセル時はプロファイルを未保存のまま維持する。"""
+        if self.profile is None:
+            return False
+        path = filedialog.asksaveasfilename(
+            title="プロファイルを保存",
+            defaultextension=".json",
+            filetypes=[("JSONプロファイル", "*.json"), ("すべてのファイル", "*.*")],
+        )
+        if not path:
+            return False
+        return self._write_profile(path)
+
+    def _write_profile(self, path: str) -> bool:
+        try:
+            save_profile(self.profile, path)
+        except ProfileLoadError as exc:
+            messagebox.showerror("SensitiveMasker", str(exc))
+            return False
+        self.profile_path_var.set(path)
+        self._update_status_bar()
+        return True
+
     def _on_export_profile(self) -> None:
+        """プロファイルを既存の保存先とは別に、任意の場所へコピーとして書き出す。"""
         if self.profile is None:
             messagebox.showerror("SensitiveMasker", "エクスポートするプロファイルがありません。")
             return
@@ -532,8 +570,6 @@ class SensitiveMaskerApp(tk.Tk):
         except ProfileLoadError as exc:
             messagebox.showerror("SensitiveMasker", str(exc))
             return
-        self.profile_path_var.set(path)
-        self._update_status_bar()
         messagebox.showinfo("SensitiveMasker", f"エクスポートしました:\n{path}")
 
     def _on_edit_rules(self) -> None:
@@ -580,8 +616,9 @@ class SensitiveMaskerApp(tk.Tk):
         if self.profile is None:
             self.status_var.set("プロファイル未読み込み")
             return
+        saved_marker = "" if self.profile_path_var.get() else " [未保存]"
         self.status_var.set(
-            f"読み込み済みプロファイル: '{self.profile.profile_name}' "
+            f"読み込み済みプロファイル: '{self.profile.profile_name}'{saved_marker} "
             f"({len(self.profile.rules)}件のルール) | "
             f"マッピング: {len(self.mapping_store.mapping)}件"
         )

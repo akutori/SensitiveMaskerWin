@@ -20,7 +20,7 @@ PATTERN_TYPE_VALUES = {v: k for k, v in PATTERN_TYPE_LABELS.items()}
 
 MODE_LABELS: dict[str, str] = {
     "fixed": "固定値 (fixed)",
-    "random": "ランダム (random)",
+    "random": "連番 (sequential)",
 }
 MODE_VALUES = {v: k for k, v in MODE_LABELS.items()}
 
@@ -65,6 +65,12 @@ def _default_rules_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS) / "rules"  # type: ignore[attr-defined]
     return Path(__file__).resolve().parents[2] / "rules"
+
+
+def _icon_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "assets" / "icon.ico"  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parents[2] / "assets" / "icon.ico"
 
 
 _INVALID_FILENAME_CHARS = '\\/:*?"<>|'
@@ -430,11 +436,21 @@ class SensitiveMaskerApp(tk.Tk):
         self.title("SensitiveMasker - 機微情報マスキングツール")
         self.geometry("800x650")
         self.minsize(500, 400)
+        self._apply_icon()
 
         self.profile: RuleProfile | None = None
         self.mapping_store: MappingStore = MappingStore()
 
         self._build_widgets()
+
+    def _apply_icon(self) -> None:
+        icon_path = _icon_path()
+        if not icon_path.exists():
+            return
+        try:
+            self.iconbitmap(default=str(icon_path))
+        except tk.TclError:
+            pass
 
     def _build_widgets(self) -> None:
         profile_row = ttk.Frame(self, padding=8)
@@ -474,6 +490,9 @@ class SensitiveMaskerApp(tk.Tk):
         copy_row = ttk.Frame(self, padding=(8, 0))
         copy_row.pack(fill="x")
         ttk.Button(copy_row, text="クリップボードにコピー", command=self._on_copy_clicked).pack(side="right")
+        ttk.Button(copy_row, text="ファイルに保存...", command=self._on_save_output_clicked).pack(
+            side="right", padx=4
+        )
 
         self.status_var = tk.StringVar(value="プロファイル未読み込み")
         ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w", padding=4).pack(
@@ -588,6 +607,20 @@ class SensitiveMaskerApp(tk.Tk):
         masked = self.output_text.get("1.0", "end-1c")
         self.clipboard_clear()
         self.clipboard_append(masked)
+
+    def _on_save_output_clicked(self) -> None:
+        path = filedialog.asksaveasfilename(
+            title="出力テキストをファイルに保存",
+            defaultextension=".txt",
+            filetypes=[("テキストファイル", "*.txt"), ("すべてのファイル", "*.*")],
+        )
+        if not path:
+            return
+        masked = self.output_text.get("1.0", "end-1c")
+        try:
+            Path(path).write_text(masked, encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("SensitiveMasker", f"ファイルに保存できません:\n{exc}")
 
     def _update_status_bar(self) -> None:
         if self.profile is None:

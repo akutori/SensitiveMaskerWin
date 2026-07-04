@@ -11,24 +11,24 @@ from masking_core.profile_io import ProfileLoadError, load_profile
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cli.main",
-        description="Mask sensitive info in text using a rule profile.",
+        description="ルールプロファイルを使ってテキスト中の機微情報をマスキングします。",
     )
-    parser.add_argument("--profile", required=True, help="Path to a RuleProfile JSON file")
-    parser.add_argument("--encoding", default="utf-8", help="Text encoding for reading/writing files")
+    parser.add_argument("--profile", required=True, help="RuleProfile JSONファイルのパス")
+    parser.add_argument("--encoding", default="utf-8", help="ファイル読み書き時の文字エンコーディング")
     parser.add_argument(
         "--reset-mapping-per-file",
         action="store_true",
-        help="Batch mode only: reset MappingStore for each file instead of sharing one across the batch",
+        help="バッチモード専用: MappingStoreをファイル間で共有せず、ファイルごとにリセットする",
     )
 
     mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument("--input", help="Input file path (default: stdin)")
+    mode_group.add_argument("--input", help="入力ファイルパス(省略時は標準入力)")
     mode_group.add_argument(
-        "--batch", nargs="+", metavar="INPUT", help="Batch-process multiple input files"
+        "--batch", nargs="+", metavar="INPUT", help="複数の入力ファイルをバッチ処理する"
     )
 
-    parser.add_argument("--output", help="Output file path (default: stdout); ignored if --batch is used")
-    parser.add_argument("--output-dir", help="Output directory for --batch mode (required with --batch)")
+    parser.add_argument("--output", help="出力ファイルパス(省略時は標準出力。--batch使用時は無視される)")
+    parser.add_argument("--output-dir", help="--batch使用時の出力先ディレクトリ(--batch使用時は必須)")
     return parser
 
 
@@ -38,11 +38,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.batch:
         if not args.output_dir:
-            parser.error("--output-dir is required when using --batch")
+            parser.error("--batch使用時は --output-dir が必須です")
         if args.output:
-            parser.error("--output cannot be used together with --batch")
+            parser.error("--output は --batch と併用できません")
     elif args.output_dir:
-        parser.error("--output-dir requires --batch")
+        parser.error("--output-dir は --batch と併用してください")
 
     try:
         profile = load_profile(args.profile)

@@ -479,8 +479,12 @@ class SensitiveMaskerApp(tk.Tk):
 
         self.profile: RuleProfile | None = None
         self.mapping_store: MappingStore = MappingStore()
+        self._last_focused_text: tk.Text | None = None
+        self._search_target: tk.Text | None = None
+        self._search_last_index = "1.0"
 
         self._build_widgets()
+        self.bind("<Control-f>", self._on_open_search)
 
     def _apply_icon(self) -> None:
         icon_path = _icon_path()
@@ -518,6 +522,8 @@ class SensitiveMaskerApp(tk.Tk):
         ttk.Label(top_pane, text="入力テキスト:").pack(anchor="w")
         self.input_text = ScrolledText(top_pane, height=12, wrap="word", pady=10)
         self.input_text.pack(fill="both", expand=True, pady=(0, 4))
+        self.input_text.tag_config("search_highlight", background="#ffd54f")
+        self.input_text.bind("<FocusIn>", lambda e: self._remember_focused_text(self.input_text))
         button_row = ttk.Frame(top_pane)
         button_row.pack(fill="x")
         ttk.Button(button_row, text="マスク実行 ->", command=self._on_mask_clicked).pack(side="left")
@@ -528,6 +534,8 @@ class SensitiveMaskerApp(tk.Tk):
         ttk.Label(bottom_pane, text="出力(マスク後)テキスト:").pack(anchor="w")
         self.output_text = ScrolledText(bottom_pane, height=12, wrap="word", state="disabled", pady=10)
         self.output_text.pack(fill="both", expand=True, pady=(0, 4))
+        self.output_text.tag_config("search_highlight", background="#ffd54f")
+        self.output_text.bind("<FocusIn>", lambda e: self._remember_focused_text(self.output_text))
         copy_row = ttk.Frame(bottom_pane)
         copy_row.pack(fill="x")
         ttk.Button(copy_row, text="クリップボードにコピー", command=self._on_copy_clicked).pack(side="right")
@@ -537,9 +545,20 @@ class SensitiveMaskerApp(tk.Tk):
         self.paned.add(bottom_pane, weight=1)
 
         self.status_var = tk.StringVar(value="プロファイル未読み込み")
-        ttk.Label(self, textvariable=self.status_var, relief="sunken", anchor="w", padding=4).pack(
-            fill="x", side="bottom"
+        self.status_label = ttk.Label(
+            self, textvariable=self.status_var, relief="sunken", anchor="w", padding=4
         )
+        self.status_label.pack(fill="x", side="bottom")
+
+        self.search_frame = ttk.Frame(self, padding=(8, 4))
+        ttk.Label(self.search_frame, text="検索(Enterで次へ):").pack(side="left")
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(self.search_frame, textvariable=self.search_var, width=40)
+        self.search_entry.pack(side="left", padx=4)
+        self.search_entry.bind("<Return>", self._on_search_next)
+        self.search_entry.bind("<Escape>", self._on_search_close)
+        ttk.Button(self.search_frame, text="閉じる", command=self._on_search_close).pack(side="left", padx=2)
+        # search_frame is intentionally not packed here -- Ctrl+F shows it
 
     # --- 既存プロファイルの読み込み(インポート/再読み込み) -------------------
 
@@ -642,6 +661,48 @@ class SensitiveMaskerApp(tk.Tk):
 
     def _on_paned_double_click(self, _event: object = None) -> None:
         self.paned.sashpos(0, self.paned.winfo_height() // 2)
+
+    # --- テキスト検索(Ctrl+F) ------------------------------------------
+
+    def _remember_focused_text(self, widget: tk.Text) -> None:
+        self._last_focused_text = widget
+
+    def _on_open_search(self, _event: object = None) -> str:
+        self._search_target = self._last_focused_text or self.input_text
+        self._search_last_index = "1.0"
+        self.search_frame.pack(fill="x", before=self.status_label)
+        self.search_entry.focus_set()
+        self.search_entry.select_range(0, "end")
+        return "break"
+
+    def _on_search_next(self, _event: object = None) -> None:
+        if self._search_target is None:
+            return
+        widget = self._search_target
+        query = self.search_var.get()
+        widget.tag_remove("search_highlight", "1.0", "end")
+        if not query:
+            return
+
+        pos = widget.search(query, self._search_last_index, stopindex="end", nocase=True)
+        if not pos:
+            # テキスト末尾まで見つからなければ先頭から再検索(ラップアラウンド)
+            pos = widget.search(query, "1.0", stopindex="end", nocase=True)
+        if not pos:
+            self._search_last_index = "1.0"
+            return
+
+        end_pos = f"{pos}+{len(query)}c"
+        widget.tag_add("search_highlight", pos, end_pos)
+        widget.see(pos)
+        self._search_last_index = end_pos
+
+    def _on_search_close(self, _event: object = None) -> None:
+        if self._search_target is not None:
+            self._search_target.tag_remove("search_highlight", "1.0", "end")
+        self.search_frame.pack_forget()
+        if self._search_target is not None:
+            self._search_target.focus_set()
 
     def _on_copy_clicked(self) -> None:
         masked = self.output_text.get("1.0", "end-1c")

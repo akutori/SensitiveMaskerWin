@@ -14,6 +14,7 @@ from masking_core.models import Rule, RuleProfile
 from masking_core.profile_io import ProfileLoadError, load_profile, save_profile
 
 from gui.settings import (
+    FIELD_TOOLTIPS,
     MODE_LABELS,
     MODE_VALUES,
     PATTERN_TYPE_LABELS,
@@ -43,12 +44,50 @@ def _safe_filename(name: str) -> str:
     return "".join("_" if c in _INVALID_FILENAME_CHARS else c for c in name).strip() or "profile"
 
 
+class _ToolTip:
+    """ウィジェットにカーソルを合わせたときに説明を表示する簡易tooltip。"""
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        self.tip_window: tk.Toplevel | None = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+        widget.bind("<Destroy>", self._hide)
+
+    def _show(self, _event: object = None) -> None:
+        if self.tip_window is not None or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip_window = tk.Toplevel(self.widget)
+        self.tip_window.wm_overrideredirect(True)
+        self.tip_window.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            self.tip_window,
+            text=self.text,
+            justify="left",
+            background="#ffffe0",
+            relief="solid",
+            borderwidth=1,
+            padx=6,
+            pady=3,
+            wraplength=320,
+        )
+        label.pack()
+
+    def _hide(self, _event: object = None) -> None:
+        if self.tip_window is not None:
+            self.tip_window.destroy()
+            self.tip_window = None
+
+
 class RuleEditDialog(tk.Toplevel):
     """モーダルなルール追加/編集ダイアログ。結果は self.result (Rule | None) に入る。"""
 
-    def __init__(self, parent: tk.Misc, rule: Rule | None = None) -> None:
+    def __init__(self, parent: tk.Misc, rule: Rule | None = None, title: str | None = None) -> None:
         super().__init__(parent)
-        self.title("ルールを編集" if rule is not None else "ルールを追加")
+        self.title(title or ("ルールを編集" if rule is not None else "ルールを追加"))
         self.resizable(False, False)
         self.result: Rule | None = None
 
@@ -64,7 +103,9 @@ class RuleEditDialog(tk.Toplevel):
         pad = {"padx": 8, "pady": 4}
         row = 0
 
-        ttk.Label(self, text="テンプレートから入力:").grid(row=row, column=0, sticky="w", **pad)
+        template_label = ttk.Label(self, text="テンプレートから入力:")
+        template_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(template_label, FIELD_TOOLTIPS["template"])
         self.template_var = tk.StringVar(value="(なし)")
         template_combo = ttk.Combobox(
             self,
@@ -77,12 +118,16 @@ class RuleEditDialog(tk.Toplevel):
         template_combo.bind("<<ComboboxSelected>>", self._on_template_selected)
         row += 1
 
-        ttk.Label(self, text="名前:").grid(row=row, column=0, sticky="w", **pad)
+        name_label = ttk.Label(self, text="名前:")
+        name_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(name_label, FIELD_TOOLTIPS["name"])
         self.name_var = tk.StringVar(value=rule.name if rule else "")
         ttk.Entry(self, textvariable=self.name_var, width=32).grid(row=row, column=1, sticky="we", **pad)
         row += 1
 
-        ttk.Label(self, text="種別:").grid(row=row, column=0, sticky="w", **pad)
+        pattern_type_label = ttk.Label(self, text="種別:")
+        pattern_type_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(pattern_type_label, FIELD_TOOLTIPS["pattern_type"])
         self.pattern_type_var = tk.StringVar(
             value=PATTERN_TYPE_LABELS[rule.pattern_type if rule else "regex"]
         )
@@ -95,12 +140,16 @@ class RuleEditDialog(tk.Toplevel):
         ).grid(row=row, column=1, sticky="w", **pad)
         row += 1
 
-        ttk.Label(self, text="パターン:").grid(row=row, column=0, sticky="w", **pad)
+        pattern_label = ttk.Label(self, text="パターン:")
+        pattern_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(pattern_label, FIELD_TOOLTIPS["pattern"])
         self.pattern_var = tk.StringVar(value=rule.pattern if rule else "")
         ttk.Entry(self, textvariable=self.pattern_var, width=32).grid(row=row, column=1, sticky="we", **pad)
         row += 1
 
-        ttk.Label(self, text="モード:").grid(row=row, column=0, sticky="w", **pad)
+        mode_label = ttk.Label(self, text="モード:")
+        mode_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(mode_label, FIELD_TOOLTIPS["mode"])
         self.mode_var = tk.StringVar(value=MODE_LABELS[rule.mode if rule else "random"])
         mode_combo = ttk.Combobox(
             self,
@@ -113,25 +162,31 @@ class RuleEditDialog(tk.Toplevel):
         mode_combo.bind("<<ComboboxSelected>>", self._on_mode_changed)
         row += 1
 
-        ttk.Label(self, text="固定値:").grid(row=row, column=0, sticky="w", **pad)
+        fixed_value_label = ttk.Label(self, text="固定値:")
+        fixed_value_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(fixed_value_label, FIELD_TOOLTIPS["fixed_value"])
         self.fixed_value_var = tk.StringVar(value=rule.fixed_value if rule and rule.fixed_value else "")
         self.fixed_value_entry = ttk.Entry(self, textvariable=self.fixed_value_var, width=32)
         self.fixed_value_entry.grid(row=row, column=1, sticky="we", **pad)
         row += 1
 
-        ttk.Label(self, text="プレフィックス:").grid(row=row, column=0, sticky="w", **pad)
+        prefix_label = ttk.Label(self, text="プレフィックス:")
+        prefix_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(prefix_label, FIELD_TOOLTIPS["prefix"])
         self.prefix_var = tk.StringVar(value=rule.prefix if rule and rule.prefix else "")
         self.prefix_entry = ttk.Entry(self, textvariable=self.prefix_var, width=32)
         self.prefix_entry.grid(row=row, column=1, sticky="we", **pad)
         row += 1
 
         self.enabled_var = tk.BooleanVar(value=rule.enabled if rule else True)
-        ttk.Checkbutton(self, text="有効", variable=self.enabled_var).grid(
-            row=row, column=0, columnspan=2, sticky="w", **pad
-        )
+        enabled_check = ttk.Checkbutton(self, text="有効", variable=self.enabled_var)
+        enabled_check.grid(row=row, column=0, columnspan=2, sticky="w", **pad)
+        _ToolTip(enabled_check, FIELD_TOOLTIPS["enabled"])
         row += 1
 
-        ttk.Label(self, text="説明:").grid(row=row, column=0, sticky="w", **pad)
+        description_label = ttk.Label(self, text="説明:")
+        description_label.grid(row=row, column=0, sticky="w", **pad)
+        _ToolTip(description_label, FIELD_TOOLTIPS["description"])
         self.description_var = tk.StringVar(value=rule.description if rule and rule.description else "")
         ttk.Entry(self, textvariable=self.description_var, width=32).grid(
             row=row, column=1, sticky="we", **pad
@@ -237,7 +292,7 @@ class RuleListEditorDialog(tk.Toplevel):
     ) -> None:
         super().__init__(parent)
         self.title("プロファイル編集")
-        self.geometry("700x450")
+        self.geometry("1050x480")
         self.current_path = current_path
         self.on_saved = on_saved
         self.rules: list[Rule] = list(profile.rules)
@@ -263,23 +318,30 @@ class RuleListEditorDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=(8, 0))
         body.pack(fill="both", expand=True)
 
-        columns = ("enabled", "name", "pattern_type", "mode", "pattern")
+        columns = ("enabled", "name", "pattern_type", "mode", "pattern", "fixed_value", "prefix", "description")
         self.tree = ttk.Treeview(body, columns=columns, show="headings", selectmode="browse")
         self.tree.heading("enabled", text="有効")
         self.tree.heading("name", text="名前")
         self.tree.heading("pattern_type", text="種別")
         self.tree.heading("mode", text="モード")
         self.tree.heading("pattern", text="パターン")
+        self.tree.heading("fixed_value", text="固定値")
+        self.tree.heading("prefix", text="プレフィックス")
+        self.tree.heading("description", text="説明")
         self.tree.column("enabled", width=40, anchor="center")
-        self.tree.column("name", width=100)
-        self.tree.column("pattern_type", width=80)
-        self.tree.column("mode", width=80)
-        self.tree.column("pattern", width=250)
+        self.tree.column("name", width=90)
+        self.tree.column("pattern_type", width=100)
+        self.tree.column("mode", width=100)
+        self.tree.column("pattern", width=160)
+        self.tree.column("fixed_value", width=120)
+        self.tree.column("prefix", width=110)
+        self.tree.column("description", width=180)
         self.tree.pack(side="left", fill="both", expand=True)
 
         side_buttons = ttk.Frame(body, padding=(4, 0))
         side_buttons.pack(side="left", fill="y")
         ttk.Button(side_buttons, text="追加", command=self._on_add).pack(fill="x", pady=2)
+        ttk.Button(side_buttons, text="コピー", command=self._on_copy).pack(fill="x", pady=2)
         ttk.Button(side_buttons, text="編集", command=self._on_edit).pack(fill="x", pady=2)
         ttk.Button(side_buttons, text="削除", command=self._on_delete).pack(fill="x", pady=2)
         ttk.Button(side_buttons, text="上へ", command=self._on_move_up).pack(fill="x", pady=(16, 2))
@@ -300,9 +362,12 @@ class RuleListEditorDialog(tk.Toplevel):
                 values=(
                     "✓" if rule.enabled else "-",
                     rule.name,
-                    rule.pattern_type,
-                    rule.mode,
+                    PATTERN_TYPE_LABELS[rule.pattern_type],
+                    MODE_LABELS[rule.mode],
                     rule.pattern,
+                    rule.fixed_value or "",
+                    rule.prefix or "",
+                    rule.description or "",
                 ),
             )
         if select_index is not None and 0 <= select_index < len(self.rules):
@@ -320,6 +385,19 @@ class RuleListEditorDialog(tk.Toplevel):
         if dialog.result is not None:
             self.rules.append(dialog.result)
             self._refresh_tree(select_index=len(self.rules) - 1)
+
+    def _on_copy(self) -> None:
+        index = self._selected_index()
+        if index is None:
+            messagebox.showerror("SensitiveMasker", "コピーするルールを選択してください。")
+            return
+        source = self.rules[index]
+        copied = source.model_copy(update={"name": f"{source.name} (コピー)"})
+        dialog = RuleEditDialog(self, rule=copied, title="ルールをコピー")
+        self.wait_window(dialog)
+        if dialog.result is not None:
+            self.rules.insert(index + 1, dialog.result)
+            self._refresh_tree(select_index=index + 1)
 
     def _on_edit(self) -> None:
         index = self._selected_index()

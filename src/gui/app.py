@@ -721,6 +721,12 @@ class SensitiveMaskerApp(tk.Tk):
         height_px = widget.winfo_height()
         if height_px <= 1:
             return
+        # タグの付け替えで文書全体の高さが変わる(改行で末尾行が入れ替わる
+        # 等)と、yview は同じ割合のままでも指す絶対位置がずれてしまう
+        # (スクロールが必要なほど長い文章の末尾行で改行すると表示が飛ぶ
+        # 不具合の原因)。付け替え前に最下部を表示していた場合のみ、
+        # 付け替え後に最下部へ再度スクロールし直して位置を維持する。
+        was_at_bottom = widget.yview()[1] >= 0.999
         widget.tag_remove("bottom_center_pad", "1.0", "end")
         widget.tag_config("bottom_center_pad", spacing3=height_px // 2)
         # "end-1c"(末尾行の可視文字の終端)までだと、末尾行が空のとき
@@ -729,6 +735,8 @@ class SensitiveMaskerApp(tk.Tk):
         # 保持する末尾の構造的な改行文字まで含む"end"を上限にすることで、
         # 末尾行が空でも1文字分の範囲が確保されタグが必ず効くようにする。
         widget.tag_add("bottom_center_pad", "end-1c linestart", "end")
+        if was_at_bottom:
+            widget.yview_moveto(1.0)
 
     # --- テキスト検索(Ctrl+F) ------------------------------------------
 

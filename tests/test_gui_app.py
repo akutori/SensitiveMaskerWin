@@ -131,6 +131,32 @@ def test_bottom_center_padding_stays_applied_through_enter_and_clear(app):
     assert widget.tag_ranges("bottom_center_pad") != ()
 
 
+def test_bottom_center_padding_stays_scrolled_to_bottom_through_enter_on_long_text(app):
+    # Regression test: for text long enough to require scrolling, pressing
+    # Enter on the last line while scrolled to the bottom must not drift the
+    # view away from the bottom. Re-tagging the padding onto a new last line
+    # changes the document's total rendered height, which shifts the
+    # absolute position a given yview *fraction* points to -- so the widget
+    # must explicitly re-pin to the bottom after re-tagging if it was
+    # already there before the edit.
+    widget = app.input_text
+    widget.focus_force()
+    app.update()
+
+    lines = [f"synthetic log line {i}" for i in range(1, 61)]
+    widget.insert("1.0", "\n".join(lines))
+    app.update()
+    widget.yview_moveto(1.0)
+    app.update()
+    assert widget.yview()[1] >= 0.999
+
+    widget.mark_set("insert", "end-1c")
+    widget.event_generate("<Return>")
+    app.update()
+
+    assert widget.yview()[1] >= 0.999
+
+
 def test_bottom_center_padding_applies_to_output_text_after_masking(app):
     app.profile = _phone_profile()
     app.input_text.insert("1.0", f"caller={FAKE_PHONE_1}")

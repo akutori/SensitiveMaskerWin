@@ -8,7 +8,7 @@ from masking_core.models import Rule, RuleProfile
 
 @dataclass
 class MappingStore:
-    """original_value -> dummy_value, plus per-prefix counters for random mode.
+    """original_value -> dummy_value, plus per-prefix counters for sequential mode.
 
     Passed in and returned by the caller (cli/gui) on every call -- never
     held as module-level/global state inside masking_core. Callers decide

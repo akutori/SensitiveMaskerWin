@@ -150,7 +150,7 @@ class RuleEditDialog(tk.Toplevel):
         mode_label = ttk.Label(self, text="モード:")
         mode_label.grid(row=row, column=0, sticky="w", **pad)
         _ToolTip(mode_label, FIELD_TOOLTIPS["mode"])
-        self.mode_var = tk.StringVar(value=MODE_LABELS[rule.mode if rule else "random"])
+        self.mode_var = tk.StringVar(value=MODE_LABELS[rule.mode if rule else "sequential"])
         mode_combo = ttk.Combobox(
             self,
             textvariable=self.mode_var,
@@ -218,7 +218,7 @@ class RuleEditDialog(tk.Toplevel):
     def _update_mode_fields_state(self) -> None:
         mode = MODE_VALUES[self.mode_var.get()]
         self.fixed_value_entry.configure(state="normal" if mode == "fixed" else "disabled")
-        self.prefix_entry.configure(state="normal" if mode == "random" else "disabled")
+        self.prefix_entry.configure(state="normal" if mode == "sequential" else "disabled")
 
     def _on_ok(self) -> None:
         mode = MODE_VALUES[self.mode_var.get()]

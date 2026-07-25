@@ -21,17 +21,17 @@ def test_rule_fixed_mode_with_fixed_value_succeeds():
     assert rule.prefix is None
 
 
-def test_rule_random_mode_requires_prefix():
+def test_rule_sequential_mode_requires_prefix():
     with pytest.raises(ValidationError):
-        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="random")
+        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="sequential")
 
 
-def test_rule_random_mode_with_prefix_succeeds():
+def test_rule_sequential_mode_with_prefix_succeeds():
     rule = Rule(
         name="r1",
         pattern_type="regex",
         pattern=r"\d+",
-        mode="random",
+        mode="sequential",
         prefix="__MASK_X_",
     )
     assert rule.prefix == "__MASK_X_"
@@ -43,9 +43,18 @@ def test_rule_fixed_mode_rejects_empty_string_fixed_value():
         Rule(name="r1", pattern_type="literal", pattern="x", mode="fixed", fixed_value="")
 
 
-def test_rule_random_mode_rejects_empty_string_prefix():
+def test_rule_sequential_mode_rejects_empty_string_prefix():
     with pytest.raises(ValidationError):
-        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="random", prefix="")
+        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="sequential", prefix="")
+
+
+def test_rule_legacy_random_mode_value_no_longer_accepted():
+    # GitHub issue #11: "random" was the mode value's original, misleading
+    # name (the actual behavior has always been a sequential counter, never
+    # random). No backward-compat alias is kept -- old profile JSON files
+    # using "random" must now fail cleanly rather than silently normalize.
+    with pytest.raises(ValidationError):
+        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="random", prefix="__P_")
 
 
 def test_rule_invalid_mode_literal_rejected():
@@ -95,7 +104,7 @@ def test_rule_enabled_can_be_set_false():
 
 def test_rule_profile_holds_multiple_rules_in_order():
     rule_a = Rule(name="a", pattern_type="literal", pattern="x", mode="fixed", fixed_value="v")
-    rule_b = Rule(name="b", pattern_type="regex", pattern=r"\d+", mode="random", prefix="__P_")
+    rule_b = Rule(name="b", pattern_type="regex", pattern=r"\d+", mode="sequential", prefix="__P_")
     profile = RuleProfile(profile_name="test", rules=[rule_a, rule_b])
     assert [r.name for r in profile.rules] == ["a", "b"]
 
@@ -150,11 +159,11 @@ def test_format_validation_error_returns_only_fixed_value_message():
 
 def test_format_validation_error_returns_only_prefix_message():
     with pytest.raises(ValidationError) as exc_info:
-        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="random")
+        Rule(name="r1", pattern_type="regex", pattern=r"\d+", mode="sequential")
 
     message = format_validation_error(exc_info.value)
 
-    assert message == "ルール 'r1': mode='random' の場合は 'prefix' が必須です"
+    assert message == "ルール 'r1': mode='sequential' の場合は 'prefix' が必須です"
 
 
 def test_format_validation_error_excludes_pydantic_internals():
@@ -195,14 +204,14 @@ def test_format_validation_error_joins_multiple_errors_one_per_line():
             profile_name="broken",
             rules=[
                 {"name": "a", "pattern_type": "literal", "pattern": "x", "mode": "fixed"},
-                {"name": "b", "pattern_type": "regex", "pattern": r"\d+", "mode": "random"},
+                {"name": "b", "pattern_type": "regex", "pattern": r"\d+", "mode": "sequential"},
             ],
         )
 
     message = format_validation_error(exc_info.value)
 
     assert "ルール 'a': mode='fixed' の場合は 'fixed_value' が必須です" in message
-    assert "ルール 'b': mode='random' の場合は 'prefix' が必須です" in message
+    assert "ルール 'b': mode='sequential' の場合は 'prefix' が必須です" in message
     # Negative: a naive `return str(exc)` would also satisfy the two
     # assertions above (the clean text sits embedded inside pydantic's raw
     # dump too), so this must independently confirm no leak markers survive

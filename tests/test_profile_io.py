@@ -15,7 +15,7 @@ def test_load_profile_valid_json_returns_rule_profile(tmp_path):
                 "name": "phone",
                 "pattern_type": "regex",
                 "pattern": r"\d{3}-\d{4}",
-                "mode": "random",
+                "mode": "sequential",
                 "prefix": "__MASK_PHONE_",
             }
         ],
@@ -130,7 +130,7 @@ def test_save_profile_round_trip(tmp_path):
         name="phone",
         pattern_type="regex",
         pattern=r"\d{3}-\d{4}",
-        mode="random",
+        mode="sequential",
         prefix="__MASK_PHONE_",
     )
     profile = RuleProfile(profile_name="roundtrip", rules=[rule])
@@ -147,7 +147,7 @@ def test_save_profile_excludes_none_fields(tmp_path):
         name="phone",
         pattern_type="regex",
         pattern=r"\d{3}-\d{4}",
-        mode="random",
+        mode="sequential",
         prefix="__MASK_PHONE_",
     )
     profile = RuleProfile(profile_name="p", rules=[rule])

@@ -134,10 +134,10 @@ uv run python -m gui.app         # GUI起動
 
 ## 実装時の注意点
 
-- ルール(`Rule`)の`mode="fixed"`時は`fixed_value`必須、`mode="random"`時は`prefix`必須。
+- ルール(`Rule`)の`mode="fixed"`時は`fixed_value`必須、`mode="sequential"`時は`prefix`必須。
   この整合性チェックは`pydantic`の`model_validator`でモデル定義時点に持たせ、
   呼び出し側(GUI/CLI)でif分岐による二重チェックをしない
-- ランダムモードのダミー値プレフィックスは、元ログ中に出現しないことが保証された文字列にする
+- 連番モードのダミー値プレフィックスは、元ログ中に出現しないことが保証された文字列にする
   (例: `__MASK_PHONE_1__`のような衝突しにくい形式)
 - バッチ変換時、`MappingStore`をファイル間で共有するかリセットするかは呼び出し側(cli/gui)の判断とし、
   `masking_core`側では強制しない

@@ -83,7 +83,7 @@ def _reset_app_state(app):
 
 
 def _phone_profile() -> RuleProfile:
-    """Self-contained test profile (regex phone rule, random/sequential mode)."""
+    """Self-contained test profile (regex phone rule, sequential mode)."""
     return RuleProfile(
         profile_name="test",
         rules=[
@@ -91,7 +91,7 @@ def _phone_profile() -> RuleProfile:
                 name="phone",
                 pattern_type="regex",
                 pattern=r"0\d{1,4}-\d{1,4}-\d{3,4}",
-                mode="random",
+                mode="sequential",
                 prefix="__MASK_PHONE_",
             )
         ],
@@ -414,5 +414,69 @@ def test_rule_edit_dialog_invalid_regex_shows_clean_message_without_crashing(app
         assert "正しい正規表現ではありません" in message
         assert "pydantic.dev" not in message
         assert dialog.result is None
+    finally:
+        dialog.destroy()
+
+
+# --- mode value rename: "random" -> "sequential" (issue #11) -------------
+
+
+def test_rule_edit_dialog_for_new_rule_defaults_to_sequential_mode_without_crashing(app):
+    # Regression test: opening the dialog for a brand-new rule (rule=None)
+    # used to look up MODE_LABELS["random"] as the default -- a KeyError
+    # once the canonical mode value was renamed to "sequential", since
+    # MODE_LABELS no longer has a "random" key at all.
+    dialog = RuleEditDialog(app)
+    app.update()
+    try:
+        assert dialog.mode_var.get() == MODE_LABELS["sequential"]
+        # Sequential is the default, so the prefix field must already be
+        # enabled and the fixed-value field disabled.
+        assert str(dialog.prefix_entry.cget("state")) == "normal"
+        assert str(dialog.fixed_value_entry.cget("state")) == "disabled"
+    finally:
+        dialog.destroy()
+
+
+def test_rule_edit_dialog_switching_to_sequential_mode_enables_prefix_field(app):
+    # Regression test: _update_mode_fields_state used to compare against
+    # the stale value "random" (mode == "random"), so after the rename the
+    # prefix field was never enabled for sequential mode via the combobox
+    # switch path, even though the combobox correctly offered "連番
+    # (sequential)" as a choice.
+    dialog = RuleEditDialog(app)
+    app.update()
+    try:
+        dialog.mode_var.set(MODE_LABELS["fixed"])
+        dialog._on_mode_changed()
+        app.update()
+        assert str(dialog.prefix_entry.cget("state")) == "disabled"
+        assert str(dialog.fixed_value_entry.cget("state")) == "normal"
+
+        dialog.mode_var.set(MODE_LABELS["sequential"])
+        dialog._on_mode_changed()
+        app.update()
+        assert str(dialog.prefix_entry.cget("state")) == "normal"
+        assert str(dialog.fixed_value_entry.cget("state")) == "disabled"
+    finally:
+        dialog.destroy()
+
+
+def test_rule_edit_dialog_saves_sequential_mode_rule_successfully(app):
+    dialog = RuleEditDialog(app)
+    app.update()
+    try:
+        dialog.name_var.set("phone")
+        dialog.pattern_type_var.set(PATTERN_TYPE_LABELS["regex"])
+        dialog.pattern_var.set(r"0\d{1,4}-\d{1,4}-\d{3,4}")
+        dialog.mode_var.set(MODE_LABELS["sequential"])
+        dialog.prefix_var.set("__MASK_PHONE_")
+
+        dialog._on_ok()
+        app.update()
+
+        assert dialog.result is not None
+        assert dialog.result.mode == "sequential"
+        assert dialog.result.prefix == "__MASK_PHONE_"
     finally:
         dialog.destroy()

@@ -2,9 +2,9 @@ from masking_core.masker import MappingStore, apply_profile
 from masking_core.models import Rule, RuleProfile
 
 
-def _rule(name, pattern, pattern_type="regex", mode="random", prefix=None, fixed_value=None, enabled=True):
+def _rule(name, pattern, pattern_type="regex", mode="sequential", prefix=None, fixed_value=None, enabled=True):
     kwargs = {}
-    if mode == "random":
+    if mode == "sequential":
         kwargs["prefix"] = prefix
     else:
         kwargs["fixed_value"] = fixed_value
@@ -35,7 +35,7 @@ def test_apply_profile_fixed_mode_produces_configured_value():
     assert masked == "login __MASK_REDACTED__ ok"
 
 
-def test_apply_profile_random_mode_produces_incrementing_counter():
+def test_apply_profile_sequential_mode_produces_incrementing_counter():
     rule = _rule("num", r"\d{4}", prefix="__MASK_N_")
     profile = RuleProfile(profile_name="p", rules=[rule])
     masked, store = apply_profile("a 1111 b 2222 c", profile, MappingStore())
@@ -114,7 +114,7 @@ def test_mapping_store_get_or_create_fixed_mode():
     assert store.get_or_create("secret", rule) == "__MASK_REDACTED__"
 
 
-def test_mapping_store_get_or_create_random_mode_increments_counter():
+def test_mapping_store_get_or_create_sequential_mode_increments_counter():
     rule = _rule("num", r".*", prefix="__MASK_N_")
     store = MappingStore()
     assert store.get_or_create("111", rule) == "__MASK_N_1__"

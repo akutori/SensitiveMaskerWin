@@ -23,7 +23,7 @@ def profile_path(tmp_path):
                 "name": "phone",
                 "pattern_type": "regex",
                 "pattern": r"0\d{1,4}-\d{1,4}-\d{3,4}",
-                "mode": "random",
+                "mode": "sequential",
                 "prefix": "__MASK_PHONE_",
             }
         ],

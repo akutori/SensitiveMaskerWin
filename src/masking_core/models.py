@@ -10,7 +10,7 @@ class Rule(BaseModel):
     name: str
     pattern_type: Literal["literal", "regex"]
     pattern: str
-    mode: Literal["fixed", "random"]
+    mode: Literal["fixed", "sequential"]
     fixed_value: str | None = None
     prefix: str | None = None
     enabled: bool = True
@@ -22,9 +22,9 @@ class Rule(BaseModel):
             raise ValueError(
                 f"ルール '{self.name}': mode='fixed' の場合は 'fixed_value' が必須です"
             )
-        if self.mode == "random" and not self.prefix:
+        if self.mode == "sequential" and not self.prefix:
             raise ValueError(
-                f"ルール '{self.name}': mode='random' の場合は 'prefix' が必須です"
+                f"ルール '{self.name}': mode='sequential' の場合は 'prefix' が必須です"
             )
         if self.pattern_type == "regex":
             try:

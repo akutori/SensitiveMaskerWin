@@ -57,6 +57,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # Must run before any stderr write, including parser.error() below and
+    # the ProfileLoadError path further down: a real stderr TextIOWrapper
+    # defaults to the console's codepage, which mangles when stderr is
+    # redirected/piped instead of shown on that console -- same class of bug
+    # _reconfigure_encoding already fixes for stdin/stdout. Hardcoded to
+    # utf-8 rather than args.encoding: --encoding governs the data being
+    # masked (which a user may legitimately set to something narrow like
+    # ascii), not this CLI's own Japanese diagnostic text, which must always
+    # be encodable regardless of that choice.
+    _reconfigure_encoding(sys.stderr, "utf-8")
+
     # --streamの併用不可チェックは--batch自身のチェックより先に行う。
     # 後回しにすると、例えば `--stream --batch a.log`(--output-dir省略)は
     # 先に「--output-dirが必須」という--batch側のエラーで止まってしまい、

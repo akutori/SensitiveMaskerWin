@@ -172,6 +172,28 @@ def test_cli_invalid_profile_path_exits_nonzero_with_clean_message(capsys):
     assert "Traceback" not in err
 
 
+def test_cli_stderr_encodes_as_utf8_regardless_of_stream_default_encoding(monkeypatch):
+    # Regression test for stderr mojibake when redirected to a file or piped
+    # into a UTF-8-expecting process: a real stderr TextIOWrapper defaults to
+    # the console's codepage (e.g. cp932 on a Japanese Windows console),
+    # which only happens to match what's displayed on an interactive console
+    # -- redirecting/piping stderr bypasses that console entirely, so the
+    # raw bytes actually written stay in the console codepage instead of
+    # --encoding. Simulate that mismatch directly rather than depending on
+    # the actual OS console codepage.
+    raw_buffer = io.BytesIO()
+    stderr_stream = io.TextIOWrapper(raw_buffer, encoding="cp932")
+    monkeypatch.setattr(sys, "stderr", stderr_stream)
+
+    exit_code = main(["--profile", "does_not_exist.json"])
+
+    stderr_stream.flush()
+    err_text = raw_buffer.getvalue().decode("utf-8")
+
+    assert exit_code == 1
+    assert "プロファイルファイル" in err_text
+
+
 def test_cli_batch_mode_shared_mapping_across_files(tmp_path, profile_path):
     file_a = tmp_path / "a.log"
     file_b = tmp_path / "b.log"

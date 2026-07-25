@@ -46,6 +46,13 @@ uv run python -m cli.main --profile my_profile.json --batch a.log b.log --output
 
 # ファイルごとにMappingStoreをリセットしたい場合
 uv run python -m cli.main --profile my_profile.json --batch a.log b.log --output-dir masked/ --reset-mapping-per-file
+
+# ストリーミングモード(長時間実行プロセスをパイプし、1行ずつ即座にマスクして出力)
+# 標準入出力のみ対応(--input/--output/--batch/--reset-mapping-per-fileとは併用不可)。
+# 行をまたぐ正規表現ルールは1行ずつの処理のため正しく機能しない場合があります
+# (よくあるケースは起動時に警告を表示しますが、検知できない場合もあります)。
+# '^'/'$'で行頭/行末を指定するルールも、通常モードとは挙動が異なる場合があります。
+some-long-running-command | uv run python -m cli.main --profile my_profile.json --stream
 ```
 
 ## GUIの起動

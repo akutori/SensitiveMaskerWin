@@ -10,7 +10,7 @@ from tkinter.scrolledtext import ScrolledText
 from pydantic import ValidationError
 
 from masking_core.masker import MappingStore, apply_profile
-from masking_core.models import Rule, RuleProfile
+from masking_core.models import Rule, RuleProfile, format_validation_error
 from masking_core.profile_io import ProfileLoadError, load_profile, save_profile
 
 from gui.settings import (
@@ -234,7 +234,9 @@ class RuleEditDialog(tk.Toplevel):
                 description=self.description_var.get() or None,
             )
         except ValidationError as exc:
-            messagebox.showerror("SensitiveMasker", f"入力内容が不正です:\n{exc}")
+            messagebox.showerror(
+                "SensitiveMasker", f"入力内容が不正です:\n{format_validation_error(exc)}"
+            )
             return
         self.result = rule
         self.destroy()

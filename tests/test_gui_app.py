@@ -31,7 +31,8 @@ from unittest.mock import patch
 
 import pytest
 
-from gui.app import SensitiveMaskerApp
+from gui.app import RuleEditDialog, SensitiveMaskerApp
+from gui.settings import MODE_LABELS, PATTERN_TYPE_LABELS
 from masking_core.masker import MappingStore
 from masking_core.models import Rule, RuleProfile
 
@@ -354,3 +355,64 @@ def test_search_next_highlights_each_match_and_wraps_around(app):
     app.update()
     wrapped_ranges = app.input_text.tag_ranges("search_highlight")
     assert [str(idx) for idx in wrapped_ranges] == [str(idx) for idx in first_ranges]
+
+
+# --- RuleEditDialog error message (issue #12: raw pydantic ValidationError
+#     leaked pydantic.dev URLs, type=value_error, and a dump of every
+#     submitted field -- including whatever sensitive value a user typed
+#     into `pattern` -- straight into the error dialog) --------------------
+
+
+def test_rule_edit_dialog_invalid_input_shows_clean_message_without_internals(app):
+    fake_pattern = "0120-XXX-FAKE-CALLER-ID"
+    dialog = RuleEditDialog(app)
+    app.update()
+    try:
+        dialog.name_var.set("phone")
+        dialog.pattern_type_var.set(PATTERN_TYPE_LABELS["regex"])
+        dialog.pattern_var.set(fake_pattern)
+        dialog.mode_var.set(MODE_LABELS["fixed"])
+        dialog.fixed_value_var.set("")  # mode=fixed with no fixed_value -> invalid
+
+        with patch("gui.app.messagebox.showerror") as mock_showerror:
+            dialog._on_ok()
+        app.update()
+
+        assert mock_showerror.called
+        _title, message = mock_showerror.call_args[0]
+        assert "ルール 'phone': mode='fixed' の場合は 'fixed_value' が必須です" in message
+        assert "pydantic.dev" not in message
+        assert "type=value_error" not in message
+        assert "input_value" not in message
+        assert fake_pattern not in message
+        # Dialog stays open on invalid input (no result set, not destroyed).
+        assert dialog.result is None
+    finally:
+        dialog.destroy()
+
+
+def test_rule_edit_dialog_invalid_regex_shows_clean_message_without_crashing(app):
+    # Adversarial-review follow-up to issue #12: a syntactically invalid
+    # regex used to save through this dialog with no error at all, then
+    # crash uncaught with re.error the moment "マスク実行" was clicked.
+    # Rule's model_validator now rejects it here, at save time, cleanly.
+    dialog = RuleEditDialog(app)
+    app.update()
+    try:
+        dialog.name_var.set("broken_regex")
+        dialog.pattern_type_var.set(PATTERN_TYPE_LABELS["regex"])
+        dialog.pattern_var.set("(")
+        dialog.mode_var.set(MODE_LABELS["fixed"])
+        dialog.fixed_value_var.set("v")
+
+        with patch("gui.app.messagebox.showerror") as mock_showerror:
+            dialog._on_ok()
+        app.update()
+
+        assert mock_showerror.called
+        _title, message = mock_showerror.call_args[0]
+        assert "正しい正規表現ではありません" in message
+        assert "pydantic.dev" not in message
+        assert dialog.result is None
+    finally:
+        dialog.destroy()

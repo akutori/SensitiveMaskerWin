@@ -62,6 +62,69 @@ def test_load_profile_schema_violation_raises_profile_load_error(tmp_path):
         load_profile(path)
 
 
+def test_load_profile_schema_violation_message_excludes_pydantic_internals_and_field_values(
+    tmp_path,
+):
+    # GitHub issue #12: a schema-invalid profile's ValidationError used to be
+    # stringified raw, leaking pydantic.dev URLs, type=value_error, and an
+    # input_value=... repr dump of every field -- including whatever
+    # (potentially sensitive) pattern text a rule in the file contained.
+    fake_pattern = "0120-XXX-FAKE-CALLER-ID"
+    data = {
+        "profile_name": "test",
+        "rules": [
+            {
+                "name": "phone",
+                "pattern_type": "regex",
+                "pattern": fake_pattern,
+                "mode": "fixed",
+                # missing fixed_value -- violates Rule's model_validator
+            }
+        ],
+    }
+    path = tmp_path / "invalid_schema.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ProfileLoadError) as exc_info:
+        load_profile(path)
+
+    message = str(exc_info.value)
+    assert "ルール 'phone': mode='fixed' の場合は 'fixed_value' が必須です" in message
+    assert "pydantic.dev" not in message
+    assert "type=value_error" not in message
+    assert "input_value" not in message
+    assert fake_pattern not in message
+
+
+def test_load_profile_invalid_regex_pattern_raises_profile_load_error_cleanly(tmp_path):
+    # Adversarial-review follow-up to issue #12: a profile with a
+    # syntactically invalid regex used to load successfully (no validation
+    # anywhere) and only crash uncaught with re.error the moment the rule
+    # was actually used to mask text. It must now fail cleanly at load time.
+    data = {
+        "profile_name": "test",
+        "rules": [
+            {
+                "name": "broken_regex",
+                "pattern_type": "regex",
+                "pattern": "(",
+                "mode": "fixed",
+                "fixed_value": "v",
+            }
+        ],
+    }
+    path = tmp_path / "invalid_regex.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ProfileLoadError) as exc_info:
+        load_profile(path)
+
+    message = str(exc_info.value)
+    assert "正しい正規表現ではありません" in message
+    assert "pydantic.dev" not in message
+    assert "input_value" not in message
+
+
 def test_save_profile_round_trip(tmp_path):
     rule = Rule(
         name="phone",

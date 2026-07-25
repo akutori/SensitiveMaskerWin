@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from masking_core.models import RuleProfile
+from masking_core.models import RuleProfile, format_validation_error
 
 
 class ProfileLoadError(Exception):
@@ -33,7 +33,7 @@ def load_profile(path: str | Path) -> RuleProfile:
         return RuleProfile.model_validate(data)
     except ValidationError as exc:
         raise ProfileLoadError(
-            f"プロファイル '{p}' のスキーマ検証に失敗しました:\n{exc}"
+            f"プロファイル '{p}' のスキーマ検証に失敗しました:\n{format_validation_error(exc)}"
         ) from exc
 
 

@@ -9,7 +9,7 @@ from tkinter.scrolledtext import ScrolledText
 
 from pydantic import ValidationError
 
-from masking_core.masker import MappingStore, apply_profile
+from masking_core.masker import MappingStore, RuleMatchCount, apply_profile
 from masking_core.models import Rule, RuleProfile, format_validation_error
 from masking_core.profile_io import ProfileLoadError, load_profile, save_profile
 
@@ -275,6 +275,51 @@ class TemplatePickerDialog(tk.Toplevel):
 
     def _on_ok(self) -> None:
         self.result = self.choice_var.get()
+        self.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+
+class FileImportChoiceDialog(tk.Toplevel):
+    """選択済みファイルの取り込み方法を選ぶダイアログ。
+
+    結果は self.result ("load_to_text" | "convert_direct" | None) に入る。
+    """
+
+    def __init__(self, parent: tk.Misc, file_path: str) -> None:
+        super().__init__(parent)
+        self.title("ファイルの取り込み方法")
+        self.resizable(False, False)
+        self.result: str | None = None
+
+        ttk.Label(
+            self, text=f"選択したファイル:\n{file_path}", justify="left", wraplength=360
+        ).pack(padx=12, pady=(12, 8), anchor="w")
+        ttk.Label(self, text="どちらの方法で取り込みますか?").pack(padx=12, pady=(0, 8), anchor="w")
+
+        button_row = ttk.Frame(self)
+        button_row.pack(padx=12, pady=(0, 4))
+        ttk.Button(
+            button_row, text="入力テキスト欄に読み込む", command=self._on_load_to_text
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            button_row, text="直接マスクして別ファイルに保存...", command=self._on_convert_direct
+        ).pack(side="left", padx=4)
+        ttk.Button(self, text="キャンセル", command=self._on_cancel).pack(pady=(4, 12))
+
+        self.transient(parent)
+        self.grab_set()
+        self.wait_visibility()
+        self.focus_set()
+
+    def _on_load_to_text(self) -> None:
+        self.result = "load_to_text"
+        self.destroy()
+
+    def _on_convert_direct(self) -> None:
+        self.result = "convert_direct"
         self.destroy()
 
     def _on_cancel(self) -> None:
@@ -582,7 +627,10 @@ class SensitiveMaskerApp(tk.Tk):
         ttk.Label(top_pane, text="入力テキスト:").pack(anchor="w", side="top")
         button_row = ttk.Frame(top_pane)
         button_row.pack(side="bottom", fill="x")
-        ttk.Button(button_row, text="マスク実行 ->", command=self._on_mask_clicked).pack(side="left")
+        ttk.Button(button_row, text="ファイルから...", command=self._on_open_file_clicked).pack(side="left")
+        ttk.Button(button_row, text="マスク実行 ->", command=self._on_mask_clicked).pack(
+            side="left", padx=4
+        )
         ttk.Button(button_row, text="クリア", command=self._on_clear_clicked).pack(side="left", padx=4)
         self.input_text = ScrolledText(top_pane, height=12, wrap="word", pady=10)
         self.input_text.pack(fill="both", expand=True, pady=(0, 4))
@@ -683,6 +731,111 @@ class SensitiveMaskerApp(tk.Tk):
 
         RuleListEditorDialog(self, self.profile, self.profile_path_var.get() or None, _on_saved)
 
+    # --- ファイルからの取り込み(読み込み / 直接変換) ---------------------
+
+    def _on_open_file_clicked(self) -> None:
+        path = filedialog.askopenfilename(
+            title="ファイルを選択",
+            filetypes=[
+                ("テキスト/ログファイル", "*.txt *.log *.md *.csv"),
+                ("すべてのファイル", "*.*"),
+            ],
+        )
+        if not path:
+            return
+
+        choice = FileImportChoiceDialog(self, path)
+        self.wait_window(choice)
+        if choice.result == "load_to_text":
+            self._load_file_into_input_text(path)
+        elif choice.result == "convert_direct":
+            self._convert_file_directly(path)
+
+    def _read_text_file_or_show_error(self, path: str) -> str | None:
+        try:
+            return Path(path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            messagebox.showerror(
+                "SensitiveMasker",
+                f"ファイル '{Path(path).name}' を読み込めません(UTF-8以外の文字エンコーディングの"
+                f"可能性があります): {exc}",
+            )
+            return None
+
+    def _load_file_into_input_text(self, path: str) -> None:
+        text = self._read_text_file_or_show_error(path)
+        if text is None:
+            return
+
+        if self.input_text.get("1.0", "end-1c").strip() and not messagebox.askyesno(
+            "SensitiveMasker",
+            "入力テキスト欄の内容を、読み込んだファイルの内容で置き換えます。よろしいですか?",
+        ):
+            return
+
+        self.input_text.delete("1.0", "end")
+        self.input_text.insert("1.0", text)
+        self._apply_bottom_center_padding(self.input_text)
+
+    def _convert_file_directly(self, path: str) -> None:
+        # 入力欄/出力欄/self.mapping_store は一切触れない: 大きいファイルで
+        # テキストウィジェットへの全文読み込みが重い/固まるという実運用上の
+        # 問題を回避するための独立した経路(Issue #14)。
+        if self.profile is None:
+            messagebox.showerror("SensitiveMasker", "先にプロファイルを読み込んでください。")
+            return
+
+        input_path = Path(path)
+        text = self._read_text_file_or_show_error(path)
+        if text is None:
+            return
+
+        masked, _, match_counts = apply_profile(text, self.profile, MappingStore())
+
+        if not self._confirm_match_count_summary(match_counts):
+            return
+
+        output_path_str = filedialog.asksaveasfilename(
+            title="変換後のファイルを保存",
+            initialdir=str(input_path.parent),
+            initialfile=f"{input_path.stem}.masked{input_path.suffix}",
+            defaultextension=input_path.suffix or ".txt",
+            filetypes=[("テキストファイル", "*.txt"), ("すべてのファイル", "*.*")],
+        )
+        if not output_path_str:
+            return
+
+        try:
+            Path(output_path_str).write_text(masked, encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror("SensitiveMasker", f"ファイルに保存できません:\n{exc}")
+            return
+
+        self.status_var.set(
+            f"'{input_path.name}' を直接変換し '{Path(output_path_str).name}' に保存しました"
+        )
+        self.after(2000, self._update_status_bar)
+
+    def _confirm_match_count_summary(self, match_counts: list[RuleMatchCount]) -> bool:
+        """マスク後の内容そのものは画面に出さず、ルールごとのマッチ件数だけを
+        見せて保存を続けるか確認する(「見せずに直接変換」でも変換漏れに
+        気づけるようにするための最低限の検証手段)。"""
+        if not match_counts:
+            lines = ["(有効なルールがありません)"]
+        else:
+            lines = [f"{stat.rule_name}: {stat.count}件" for stat in match_counts]
+        zero_count_rules = [stat.rule_name for stat in match_counts if stat.count == 0]
+
+        message = "マスク結果(内容は表示されません):\n\n" + "\n".join(lines)
+        if zero_count_rules:
+            message += (
+                "\n\n※ 0件だったルール: "
+                + ", ".join(zero_count_rules)
+                + "\n意図した挙動か確認してください。"
+            )
+        message += "\n\nこの内容で保存を続けますか?"
+        return messagebox.askyesno("SensitiveMasker", message)
+
     # --- マスキング操作 ------------------------------------------------
 
     def _on_mask_clicked(self) -> None:
@@ -693,7 +846,7 @@ class SensitiveMaskerApp(tk.Tk):
         # 常に新しいMappingStoreで再マッピングする: プロファイル編集直後でも
         # 手動リセット操作なしで変更がそのまま反映される。
         self.mapping_store = MappingStore()
-        masked, self.mapping_store = apply_profile(text, self.profile, self.mapping_store)
+        masked, self.mapping_store, _ = apply_profile(text, self.profile, self.mapping_store)
         self.output_text.configure(state="normal")
         self.output_text.delete("1.0", "end")
         self.output_text.insert("1.0", masked)

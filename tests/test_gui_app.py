@@ -27,11 +27,12 @@ of its mutable state removes that exposure entirely while still exercising
 real widgets/real callbacks per test.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
-from gui.app import RuleEditDialog, SensitiveMaskerApp
+from gui.app import FileImportChoiceDialog, RuleEditDialog, SensitiveMaskerApp
 from gui.settings import MODE_LABELS, PATTERN_TYPE_LABELS
 from masking_core.masker import MappingStore
 from masking_core.models import Rule, RuleProfile
@@ -480,3 +481,272 @@ def test_rule_edit_dialog_saves_sequential_mode_rule_successfully(app):
         assert dialog.result.prefix == "__MASK_PHONE_"
     finally:
         dialog.destroy()
+
+
+# --- FileImportChoiceDialog (issue #14) -----------------------------------
+
+
+def test_file_import_choice_dialog_load_to_text_sets_result(app):
+    dialog = FileImportChoiceDialog(app, "C:/tmp/sample.log")
+    app.update()
+    try:
+        dialog._on_load_to_text()
+        assert dialog.result == "load_to_text"
+    finally:
+        dialog.destroy()
+
+
+def test_file_import_choice_dialog_convert_direct_sets_result(app):
+    dialog = FileImportChoiceDialog(app, "C:/tmp/sample.log")
+    app.update()
+    try:
+        dialog._on_convert_direct()
+        assert dialog.result == "convert_direct"
+    finally:
+        dialog.destroy()
+
+
+def test_file_import_choice_dialog_cancel_sets_result_none(app):
+    dialog = FileImportChoiceDialog(app, "C:/tmp/sample.log")
+    app.update()
+    try:
+        dialog._on_cancel()
+        assert dialog.result is None
+    finally:
+        dialog.destroy()
+
+
+# --- _on_open_file_clicked dispatch (issue #14) ---------------------------
+
+
+def test_on_open_file_clicked_cancelled_file_dialog_does_nothing(app):
+    with patch("gui.app.filedialog.askopenfilename", return_value=""), \
+         patch("gui.app.FileImportChoiceDialog") as mock_dialog_cls, \
+         patch.object(app, "_load_file_into_input_text") as mock_load, \
+         patch.object(app, "_convert_file_directly") as mock_convert:
+        app._on_open_file_clicked()
+
+    mock_dialog_cls.assert_not_called()
+    mock_load.assert_not_called()
+    mock_convert.assert_not_called()
+
+
+def test_on_open_file_clicked_dispatches_to_load_when_choice_is_load_to_text(app, tmp_path):
+    file_path = tmp_path / "sample.log"
+    file_path.write_text("dummy", encoding="utf-8")
+    fake_dialog = SimpleNamespace(result="load_to_text")
+
+    with patch("gui.app.filedialog.askopenfilename", return_value=str(file_path)), \
+         patch("gui.app.FileImportChoiceDialog", return_value=fake_dialog), \
+         patch.object(app, "wait_window"), \
+         patch.object(app, "_load_file_into_input_text") as mock_load, \
+         patch.object(app, "_convert_file_directly") as mock_convert:
+        app._on_open_file_clicked()
+
+    mock_load.assert_called_once_with(str(file_path))
+    mock_convert.assert_not_called()
+
+
+def test_on_open_file_clicked_dispatches_to_convert_when_choice_is_convert_direct(app, tmp_path):
+    file_path = tmp_path / "sample.log"
+    file_path.write_text("dummy", encoding="utf-8")
+    fake_dialog = SimpleNamespace(result="convert_direct")
+
+    with patch("gui.app.filedialog.askopenfilename", return_value=str(file_path)), \
+         patch("gui.app.FileImportChoiceDialog", return_value=fake_dialog), \
+         patch.object(app, "wait_window"), \
+         patch.object(app, "_load_file_into_input_text") as mock_load, \
+         patch.object(app, "_convert_file_directly") as mock_convert:
+        app._on_open_file_clicked()
+
+    mock_convert.assert_called_once_with(str(file_path))
+    mock_load.assert_not_called()
+
+
+def test_on_open_file_clicked_choice_cancelled_does_nothing(app, tmp_path):
+    file_path = tmp_path / "sample.log"
+    file_path.write_text("dummy", encoding="utf-8")
+    fake_dialog = SimpleNamespace(result=None)
+
+    with patch("gui.app.filedialog.askopenfilename", return_value=str(file_path)), \
+         patch("gui.app.FileImportChoiceDialog", return_value=fake_dialog), \
+         patch.object(app, "wait_window"), \
+         patch.object(app, "_load_file_into_input_text") as mock_load, \
+         patch.object(app, "_convert_file_directly") as mock_convert:
+        app._on_open_file_clicked()
+
+    mock_load.assert_not_called()
+    mock_convert.assert_not_called()
+
+
+# --- _load_file_into_input_text (issue #14) -------------------------------
+
+
+def test_load_file_into_input_text_populates_input_text(app, tmp_path):
+    file_path = tmp_path / "sample.log"
+    content = f"caller={FAKE_PHONE_1}\n"
+    file_path.write_text(content, encoding="utf-8")
+    app.input_text.delete("1.0", "end")
+
+    app._load_file_into_input_text(str(file_path))
+    app.update()
+
+    assert app.input_text.get("1.0", "end-1c") == content
+
+
+def test_load_file_into_input_text_does_not_auto_mask(app, tmp_path):
+    # 否定テスト: 読み込んだだけではマスキングは実行されない。「マスク実行」
+    # ボタンを押すまでは既存フローに一切割り込まないことを保証する。
+    file_path = tmp_path / "sample.log"
+    file_path.write_text(f"caller={FAKE_PHONE_1}\n", encoding="utf-8")
+    app.input_text.delete("1.0", "end")
+
+    app._load_file_into_input_text(str(file_path))
+    app.update()
+
+    assert app.output_text.get("1.0", "end-1c") == ""
+
+
+def test_load_file_into_input_text_cancelled_overwrite_keeps_existing_text(app, tmp_path):
+    file_path = tmp_path / "new.log"
+    file_path.write_text("new content", encoding="utf-8")
+    app.input_text.delete("1.0", "end")
+    app.input_text.insert("1.0", "既存の入力")
+
+    with patch("gui.app.messagebox.askyesno", return_value=False):
+        app._load_file_into_input_text(str(file_path))
+    app.update()
+
+    assert app.input_text.get("1.0", "end-1c") == "既存の入力"
+
+
+def test_load_file_into_input_text_confirmed_overwrite_replaces_text(app, tmp_path):
+    file_path = tmp_path / "new.log"
+    file_path.write_text("new content", encoding="utf-8")
+    app.input_text.delete("1.0", "end")
+    app.input_text.insert("1.0", "既存の入力")
+
+    with patch("gui.app.messagebox.askyesno", return_value=True):
+        app._load_file_into_input_text(str(file_path))
+    app.update()
+
+    assert app.input_text.get("1.0", "end-1c") == "new content"
+
+
+def test_load_file_into_input_text_empty_input_skips_confirmation(app, tmp_path):
+    file_path = tmp_path / "new.log"
+    file_path.write_text("new content", encoding="utf-8")
+    app.input_text.delete("1.0", "end")
+
+    with patch("gui.app.messagebox.askyesno") as mock_askyesno:
+        app._load_file_into_input_text(str(file_path))
+    app.update()
+
+    mock_askyesno.assert_not_called()
+    assert app.input_text.get("1.0", "end-1c") == "new content"
+
+
+def test_load_file_into_input_text_decode_error_shows_messagebox_and_keeps_text(app, tmp_path):
+    file_path = tmp_path / "sjis.log"
+    file_path.write_bytes("非UTF8データ".encode("shift_jis"))
+    app.input_text.delete("1.0", "end")
+    app.input_text.insert("1.0", "既存の入力")
+
+    with patch("gui.app.messagebox.showerror") as mock_showerror:
+        app._load_file_into_input_text(str(file_path))
+    app.update()
+
+    mock_showerror.assert_called_once()
+    assert app.input_text.get("1.0", "end-1c") == "既存の入力"
+
+
+# --- _convert_file_directly (issue #14) ------------------------------------
+
+
+def test_convert_file_directly_without_profile_shows_error_and_skips_dialogs(app, tmp_path):
+    assert app.profile is None
+    file_path = tmp_path / "sample.log"
+    file_path.write_text(f"caller={FAKE_PHONE_1}\n", encoding="utf-8")
+
+    with patch("gui.app.messagebox.showerror") as mock_showerror, \
+         patch("gui.app.filedialog.asksaveasfilename") as mock_saveas:
+        app._convert_file_directly(str(file_path))
+
+    mock_showerror.assert_called_once()
+    mock_saveas.assert_not_called()
+
+
+def test_convert_file_directly_decode_error_shows_messagebox_and_skips_save_dialog(app, tmp_path):
+    app.profile = _phone_profile()
+    file_path = tmp_path / "sjis.log"
+    file_path.write_bytes("非UTF8データ".encode("shift_jis"))
+
+    with patch("gui.app.messagebox.showerror") as mock_showerror, \
+         patch("gui.app.filedialog.asksaveasfilename") as mock_saveas:
+        app._convert_file_directly(str(file_path))
+
+    mock_showerror.assert_called_once()
+    mock_saveas.assert_not_called()
+
+
+def test_convert_file_directly_writes_masked_content_and_leaves_textboxes_untouched(app, tmp_path):
+    # 否定テストを兼ねる: input_text/output_text/self.mapping_store のいずれも
+    # 変化しないことが「テキスト欄を経由しない直接変換」という本設計の核心。
+    app.profile = _phone_profile()
+    input_path = tmp_path / "sample.log"
+    input_path.write_text(f"caller={FAKE_PHONE_1}\n", encoding="utf-8")
+    output_path = tmp_path / "sample.masked.log"
+    original_mapping_store = app.mapping_store
+
+    with patch("gui.app.messagebox.askyesno", return_value=True), \
+         patch("gui.app.filedialog.asksaveasfilename", return_value=str(output_path)):
+        app._convert_file_directly(str(input_path))
+    app.update()
+
+    assert output_path.read_text(encoding="utf-8") == "caller=__MASK_PHONE_1__\n"
+    assert app.input_text.get("1.0", "end-1c") == ""
+    assert app.output_text.get("1.0", "end-1c") == ""
+    assert app.mapping_store is original_mapping_store
+
+
+def test_convert_file_directly_declining_summary_confirmation_skips_save_dialog(app, tmp_path):
+    app.profile = _phone_profile()
+    input_path = tmp_path / "sample.log"
+    input_path.write_text(f"caller={FAKE_PHONE_1}\n", encoding="utf-8")
+
+    with patch("gui.app.messagebox.askyesno", return_value=False), \
+         patch("gui.app.filedialog.asksaveasfilename") as mock_saveas:
+        app._convert_file_directly(str(input_path))
+
+    mock_saveas.assert_not_called()
+
+
+def test_convert_file_directly_cancelling_save_dialog_does_not_write_file(app, tmp_path):
+    app.profile = _phone_profile()
+    input_path = tmp_path / "sample.log"
+    input_path.write_text(f"caller={FAKE_PHONE_1}\n", encoding="utf-8")
+
+    with patch("gui.app.messagebox.askyesno", return_value=True), \
+         patch("gui.app.filedialog.asksaveasfilename", return_value=""):
+        app._convert_file_directly(str(input_path))
+
+    assert list(tmp_path.glob("*.masked.log")) == []
+
+
+def test_convert_file_directly_summary_message_warns_about_zero_count_rules(app, tmp_path):
+    # 「見せずに直接変換」でも変換漏れに気づけるようにするための安全網
+    # (issue #14で挙がった懸念点への対応)。マッチ0件のルールがあると
+    # メッセージ本文に明示され、保存前にユーザーが気づける。
+    app.profile = _phone_profile()
+    input_path = tmp_path / "no_match.log"
+    input_path.write_text("nothing sensitive here\n", encoding="utf-8")
+
+    with patch("gui.app.messagebox.askyesno", return_value=False) as mock_askyesno, \
+         patch("gui.app.filedialog.asksaveasfilename") as mock_saveas:
+        app._convert_file_directly(str(input_path))
+
+    mock_askyesno.assert_called_once()
+    _title, message = mock_askyesno.call_args[0]
+    assert "phone: 0件" in message
+    assert "0件だったルール" in message
+    mock_saveas.assert_not_called()

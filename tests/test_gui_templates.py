@@ -39,7 +39,7 @@ def test_all_profile_templates_build_valid_rule_profiles():
 
 def test_general_template_masks_synthetic_log():
     profile = _build_profile("汎用 (general)")
-    masked, _ = apply_profile(SAMPLE_GENERAL_LOG, profile, MappingStore())
+    masked, _, _ = apply_profile(SAMPLE_GENERAL_LOG, profile, MappingStore())
 
     assert FAKE_PHONE_1 not in masked
     assert FAKE_IP_1 not in masked
@@ -53,7 +53,7 @@ def test_general_template_masks_synthetic_log():
 
 def test_sip_template_masks_synthetic_log():
     profile = _build_profile("SIP")
-    masked, _ = apply_profile(SAMPLE_SIP_LOG, profile, MappingStore())
+    masked, _, _ = apply_profile(SAMPLE_SIP_LOG, profile, MappingStore())
 
     assert FAKE_SIP_URI not in masked
     assert FAKE_PHONE_2 not in masked

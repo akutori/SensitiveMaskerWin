@@ -167,7 +167,7 @@ def _run_single(args: argparse.Namespace, profile) -> int:
             )
             return 1
 
-    masked, _ = apply_profile(text, profile, store)
+    masked, _, _ = apply_profile(text, profile, store)
 
     if args.output:
         if not _write_output_file(Path(args.output), masked, args.encoding):
@@ -234,7 +234,7 @@ def _run_streaming(args: argparse.Namespace, profile: RuleProfile) -> int:
 
     try:
         for line in sys.stdin:
-            masked, store = apply_profile(line, profile, store)
+            masked, store, _ = apply_profile(line, profile, store)
             sys.stdout.write(masked)
             sys.stdout.flush()
     except UnicodeDecodeError as exc:
@@ -281,7 +281,7 @@ def _run_batch(args: argparse.Namespace, profile) -> int:
         text = _read_input_file(input_path, args.encoding)
         if text is None:
             return 1
-        masked, store = apply_profile(text, profile, store)
+        masked, store, _ = apply_profile(text, profile, store)
 
         output_path = output_dir / f"{input_path.stem}.masked{input_path.suffix}"
         if not _write_output_file(output_path, masked, args.encoding):
